@@ -19,8 +19,14 @@ class RosSystemQNP extends DefaultDeclarativeQualifiedNameProvider{
       return getConverter().toQualifiedName(node_name);
     }
     if (obj instanceof RosInterface) {
-      val interface_name = obj.name
-      return getConverter().toQualifiedName(interface_name);
+      // qualify interface names with their containing node: NodeName.InterfaceName
+      val iface = obj as RosInterface
+      val iface_name = iface.name
+      val parent = iface.eContainer as RosNode
+      if (parent !== null && parent.name !== null) {
+        return getConverter().toQualifiedName(parent.name + "." + iface_name);
+      }
+      return getConverter().toQualifiedName(iface_name);
     }
     if (obj instanceof Rossystem) {
       val sys_name = obj.name
@@ -35,7 +41,13 @@ class RosSystemQNP extends DefaultDeclarativeQualifiedNameProvider{
       return getConverter().toQualifiedName(param_name);
     }
     if (obj instanceof RosParameter) {
-      val param_name = obj.name
+      // qualify ros parameters with their containing node: NodeName.ParamName
+      val rparam = obj as RosParameter
+      val param_name = rparam.name
+      val parent = rparam.eContainer as RosNode
+      if (parent !== null && parent.name !== null) {
+        return getConverter().toQualifiedName(parent.name + "." + param_name);
+      }
       return getConverter().toQualifiedName(param_name);
     }
     }
