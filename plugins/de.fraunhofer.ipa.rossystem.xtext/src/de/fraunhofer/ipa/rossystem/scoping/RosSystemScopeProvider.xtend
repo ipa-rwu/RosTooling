@@ -3,13 +3,252 @@
  */
 package de.fraunhofer.ipa.rossystem.scoping
 
+import org.eclipse.xtext.scoping.IScope
+import org.eclipse.xtext.scoping.Scopes
+import org.eclipse.emf.ecore.EReference
+import org.eclipse.emf.ecore.EObject
+import org.eclipse.xtext.EcoreUtil2
+
+import java.util.ArrayList
+
+import system.RosNode
+import system.RosPublisherReference
+import system.RosSubscriberReference
+import system.RosServiceServerReference
+import system.RosServiceClientReference
+import system.RosActionServerReference
+import system.RosActionClientReference
+import system.RosParameter
+import system.RossystemPackage
+
+import ros.Node
+import ros.Publisher
+import ros.Subscriber
+import ros.ServiceServer
+import ros.ServiceClient
+import ros.ActionServer
+import ros.ActionClient
+import ros.Parameter
 
 /**
- * This class contains custom scoping description.
- *
- * See https://www.eclipse.org/Xtext/documentation/303_runtime_concepts.html#scoping
- * on how and when to use it.
+ * Custom scope provider: for each Ros*Reference.from cross-reference, expose only the
+ * corresponding ros::<Type> elements contained in the ros::Node referenced by the
+ * enclosing RosNode.from property.
  */
 class RosSystemScopeProvider extends AbstractRosSystemScopeProvider {
+
+    protected def java.util.List<EObject> collectOfType(Node node, java.lang.Class<?> type) {
+        val result = new ArrayList<EObject>()
+        if (node === null) return result
+        if (type === typeof(Publisher)) {
+            for (p : node.publisher) {
+                result.add(p as EObject)
+            }
+        } else if (type === typeof(Subscriber)) {
+            for (s : node.subscriber) {
+                result.add(s as EObject)
+            }
+        } else if (type === typeof(ServiceServer)) {
+            for (ss : node.serviceserver) {
+                result.add(ss as EObject)
+            }
+        } else if (type === typeof(ServiceClient)) {
+            for (sc : node.serviceclient) {
+                result.add(sc as EObject)
+            }
+        } else if (type === typeof(ActionServer)) {
+            for (server : node.actionserver) {
+                result.add(server as EObject)
+            }
+        } else if (type === typeof(ActionClient)) {
+            for (client : node.actionclient) {
+                result.add(client as EObject)
+            }
+        } else if (type === typeof(Parameter)) {
+            for (param : node.parameter) {
+                result.add(param as EObject)
+            }
+        } else {
+            val it = node.eAllContents()
+            while (it.hasNext()) {
+                val o = it.next()
+                if (type.isInstance(o) && EcoreUtil2.getContainerOfType(o, typeof(Node)) === node) {
+                    result.add(o as EObject)
+                }
+            }
+        }
+        return result
+    }
+
+    // build scope from list of candidate EObjects. Only include those that have a named attribute with non-null value
+    protected def IScope buildScopeFor(java.util.List<EObject> elems, java.lang.Class<?> type) {
+        val filtered = new java.util.ArrayList<EObject>()
+        for (candidate : elems) {
+            if (type.isInstance(candidate)) {
+                val obj = candidate as EObject
+                val name = getNameOf(obj)
+                if (name !== null) {
+                    filtered.add(obj)
+                }
+            }
+        }
+        return Scopes.scopeFor(filtered)
+    }
+
+    protected def String getNameOf(EObject obj) {
+        if (obj === null) return null
+        try {
+            val nameAttr = obj.eClass().getEAllAttributes.findFirst[a | a.getName.equals("name")]
+            if (nameAttr !== null) {
+                val nameVal = obj.eGet(nameAttr)
+                if (nameVal !== null) {
+                    return nameVal.toString
+                }
+            }
+        } catch (Exception ex) {
+            // ignore and fall through
+        }
+        return null
+    }
+
+    protected def void debug(String message) {
+        System.out.println("[RosSystemScopeProvider] " + message)
+    }
+
+    protected def void debugScope(String scopeId, EObject ctx, Node node, java.util.List<EObject> elems) {
+        val ctxInfo = if (ctx === null) "null" else ctx.eClass?.name
+        val nodeInfoName = if (node === null) null else getNameOf(node)
+        val nodeInfo = if (node === null) "null" else (if (nodeInfoName !== null) nodeInfoName else node.eClass?.name)
+        debug(scopeId + ": ctx=" + ctxInfo + ", rosNode=" + nodeInfo)
+        val buf = new StringBuilder()
+        var first = true
+        for (candidate : elems) {
+            if (!first) {
+                buf.append(", ")
+            }
+            first = false
+            val name = getNameOf(candidate)
+            if (name !== null) {
+                buf.append(name)
+            } else {
+                buf.append(candidate?.eClass?.name)
+            }
+        }
+        debug(scopeId + ": candidates=[" + buf.toString + "]")
+    }
+
+    protected def Node resolveNodeFromContext(EObject ctx) {
+        val rosNode = EcoreUtil2.getContainerOfType(ctx, typeof(RosNode))
+        if (rosNode === null) return null
+        val from = rosNode.from
+        if (from instanceof Node) {
+            return from
+        }
+        return null
+    }
+
+    override IScope getScope(EObject context, EReference reference) {
+        switch reference {
+            case RossystemPackage.Literals.ROS_PUBLISHER_REFERENCE__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(Publisher))
+                debugScope("getScope:ROS_PUBLISHER_REFERENCE__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(Publisher))
+            }
+            case RossystemPackage.Literals.ROS_SUBSCRIBER_REFERENCE__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(Subscriber))
+                debugScope("getScope:ROS_SUBSCRIBER_REFERENCE__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(Subscriber))
+            }
+            case RossystemPackage.Literals.ROS_SERVICE_SERVER_REFERENCE__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(ServiceServer))
+                debugScope("getScope:ROS_SERVICE_SERVER_REFERENCE__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(ServiceServer))
+            }
+            case RossystemPackage.Literals.ROS_SERVICE_CLIENT_REFERENCE__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(ServiceClient))
+                debugScope("getScope:ROS_SERVICE_CLIENT_REFERENCE__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(ServiceClient))
+            }
+            case RossystemPackage.Literals.ROS_ACTION_SERVER_REFERENCE__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(ActionServer))
+                debugScope("getScope:ROS_ACTION_SERVER_REFERENCE__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(ActionServer))
+            }
+            case RossystemPackage.Literals.ROS_ACTION_CLIENT_REFERENCE__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(ActionClient))
+                debugScope("getScope:ROS_ACTION_CLIENT_REFERENCE__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(ActionClient))
+            }
+            case RossystemPackage.Literals.ROS_PARAMETER__FROM: {
+                val node = resolveNodeFromContext(context)
+                val elems = collectOfType(node, typeof(Parameter))
+                debugScope("getScope:ROS_PARAMETER__FROM", context, node, elems)
+                return buildScopeFor(elems, typeof(Parameter))
+            }
+            default: super.getScope(context, reference)
+        }
+    }
+
+    def IScope scope_RosPublisherReference_from(RosPublisherReference ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(Publisher))
+        debugScope("scope_RosPublisherReference_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(Publisher))
+    }
+
+    def IScope scope_RosSubscriberReference_from(RosSubscriberReference ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(Subscriber))
+        debugScope("scope_RosSubscriberReference_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(Subscriber))
+    }
+
+    def IScope scope_RosServiceServerReference_from(RosServiceServerReference ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(ServiceServer))
+        debugScope("scope_RosServiceServerReference_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(ServiceServer))
+    }
+
+    def IScope scope_RosServiceClientReference_from(RosServiceClientReference ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(ServiceClient))
+        debugScope("scope_RosServiceClientReference_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(ServiceClient))
+    }
+
+    def IScope scope_RosActionServerReference_from(RosActionServerReference ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(ActionServer))
+        debugScope("scope_RosActionServerReference_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(ActionServer))
+    }
+
+    def IScope scope_RosActionClientReference_from(RosActionClientReference ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(ActionClient))
+        debugScope("scope_RosActionClientReference_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(ActionClient))
+    }
+
+    def IScope scope_RosParameter_from(RosParameter ctx, EReference ref) {
+        val rosNodeRef = resolveNodeFromContext(ctx)
+        if (rosNodeRef === null) return IScope.NULLSCOPE
+        val elems = collectOfType(rosNodeRef, typeof(Parameter))
+        debugScope("scope_RosParameter_from", ctx, rosNodeRef, elems)
+        return buildScopeFor(elems, typeof(Parameter))
+    }
 
 }
